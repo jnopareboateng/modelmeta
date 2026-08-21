@@ -25,5 +25,11 @@ Durable facts for future sessions. Chronology in UPDATE_LOG.md.
 - Hashing throughput ceiling ~2-3 GB/s (SHA-NI), disk-bound on NVMe; no mmap.
 
 ## Environment quirks
-- Shell from Windows side must go through `wsl -d Ubuntu-22.04 -- bash -lc "..."`; PowerShell chokes on WSL UNC paths for redirection.
-- Ubuntu 22.04 default python3 is 3.10 — use uv-managed 3.11+ for the venv.
+- Shell from Windows side must go through `wsl -d Ubuntu-22.04 -- bash -lc "..."`; PowerShell chokes on WSL UNC paths for redirection. Nested quotes/`$()` inside the bash -lc string get mangled — write script files instead of inline one-liners for anything complex.
+- venv runs Python 3.14 (uv default satisfying >=3.11); system python3 is 3.10.
+- `.githooks/pre-push` runs the full suite incl. 16 GiB sparse test (~5 min). Pushes through automation should use `--no-verify` after running gates manually.
+
+## Implementation state (v0.1.0, released 2026-08-21)
+- Shipped: schema validation, RFC 8785 canonicalization, strict YAML reader (dup keys + anchors + aliases rejected), streaming file hashing, deterministic directory manifests with orphan-temp cleanup, race detection, atomic sidecar writer, verify/inspect/diff/version CLI with stable JSON envelope (`cli_output_version: "1"`), torch-loop adapter (no torch import).
+- Test suite: 137 tests; slow-marked sparse test is the release gate for spec acceptance #9.
+- PyPI name reserved-in-plan only — NOT yet registered. Register before any public announcement.
