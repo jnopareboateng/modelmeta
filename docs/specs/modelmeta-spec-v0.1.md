@@ -520,3 +520,16 @@ It is not yet:
 > A system that proves where model weights came from.
 
 That stronger claim requires authenticated signing, a trusted identity, durable run records, and a defined trust model. Keeping that distinction explicit is what prevents the project from becoming a decorative YAML generator with misleading security language.
+
+## 19. Amendments after market and technical research (2026-08-21)
+
+Research synthesis: `docs/research/2026-08-21-pmf-and-landscape.md`. The v0.1 scope is unchanged; the following decisions are amended or pinned.
+
+1. **Python floor is `>=3.11`** (was implicitly 3.10). Rationale: 3.10 upstream EOL is 2026-10-31; native `hashlib.file_digest`; `tomllib` in stdlib.
+2. **Canonical JSON uses the `rfc8785` library (pinned)** rather than a hand-rolled serializer; RFC 8785 Appendix B vectors are part of the test suite. Vendoring trigger: library abandoned AND a release blocks on it.
+3. **The YAML loader must reject anchors and aliases** in addition to duplicate keys, and enforce an input size cap (default 4 MiB). PyYAML's alias-expansion DoS is unfixed upstream (issue #235); sidecars are semi-trusted input.
+4. **Atomic write hardening:** temporary files are created with `mkstemp` in the sidecar directory using the `<sidecar>.tmp*` naming already excluded from directory hashing; `os.replace` is retried up to three times on Windows `PermissionError`; parent-directory fsync is POSIX-only and its omission on Windows is documented as a durability gap.
+5. **Race detection degrades gracefully:** when `(size, mtime_ns, inode)` identity cannot include a meaningful inode (`st_ino == 0` on FAT/WebDAV-class filesystems), comparison falls back to size + mtime only. A detected race raises a documented race error mapped to exit code 14 (verification could not complete), distinct from digest mismatch.
+6. **Unrecognized `schema_version` produces status `unsupported_schema` with exit code 13**, sharing the "cannot safely proceed" block with unsupported targets. The reader fails closed.
+7. **Strategic positioning:** `verify` is the acquisition feature — a pre-load integrity gate before `torch.load`, framed against the pickle-RCE CVE timeline. The canonical metadata payload must remain extractable so v0.2 can emit Sigstore/OpenSSF Model Signing-compatible statements instead of inventing a rival envelope.
+8. **Roadmap note:** surfacing embedded safetensors/GGUF metadata during `inspect` (composition, not competition) is deferred; it must not enter v0.1 scope.
