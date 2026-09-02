@@ -133,6 +133,30 @@ def _print_inspection(metadata: dict[str, Any], sidecar: str, missing: list[str]
     training = metadata.get("training", {})
     if "global_step" in training:
         print(f"training.global_step: {training['global_step']}")
+    if "loss" in training:
+        print(f"training.loss: {training['loss']}")
+    compute = metadata.get("compute", {})
+    if "wall_hours" in compute:
+        try:
+            wh = float(compute["wall_hours"])
+            print(f"wall_hours: {wh:.4f} (~{wh * 60:.1f} min)")
+        except (TypeError, ValueError):
+            print(f"wall_hours: {compute['wall_hours']}")
+    if "gpu_hours" in compute:
+        try:
+            gh = float(compute["gpu_hours"])
+            # Only show gpu_hours separately when it differs from wall_hours
+            wh_val = compute.get("wall_hours")
+            if wh_val is None or float(wh_val) != gh:
+                print(f"gpu_hours: {gh:.4f}")
+        except (TypeError, ValueError):
+            print(f"gpu_hours: {compute['gpu_hours']}")
+    if "framework" in compute:
+        print(f"compute.framework: {compute['framework']}")
+    if "accelerator_type" in compute:
+        print(f"compute.accelerator_type: {compute['accelerator_type']}")
+    if "accelerator_count" in compute:
+        print(f"compute.accelerator_count: {compute['accelerator_count']}")
     provenance = metadata.get("provenance", {})
     git = provenance.get("git", {})
     if "commit" in git:

@@ -1,5 +1,9 @@
 # UPDATE_LOG — modelmeta
 
+## 2026-09-02
+- Implemented auto-timing in `MetaWriter` (monotonic `wall_hours`/`gpu_hours` auto-fill, `reset_timer()`, `elapsed_*` props) + `schema` wall_hours validation + `inspect` duration display; rewrote README top to beginner one-line problem + 30-sec flow. 136 tests pass.
+- Review flaw noted: no GPU detection (count is caller-supplied only), `stamp_checkpoint` fresh writer gives ~0; durable resume ledger still TODO. Process correction: agents must use deep reasoning (j-space) and adversarial flaw scan before coding.
+
 ## 2026-08-21
 - Researched competitive landscape, PMF, and technical feasibility (3 parallel agents). Verdict: build as narrow integrity tool; wedge = `verify` pre-load gate on pickle-CVE timeline. Docs: `docs/research/2026-08-21-pmf-and-landscape.md`.
 - Amended spec (§19): Python >=3.11, rfc8785 library pinned, YAML anchors/aliases rejected + 4 MiB cap, Windows replace retry, inode degradation, unsupported_schema -> exit 13.

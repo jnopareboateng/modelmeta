@@ -1,18 +1,23 @@
 # modelmeta
 
-A small offline tool that creates and verifies portable, hash-linked metadata for model checkpoint artifacts.
+**One-line problem:** Training saves `model.safetensors` but forgets *how long it took, what data, what code, and what loss* made it — so you need a separate W&B/MLflow setup just to look it up later. `modelmeta` puts that info right next to the checkpoint so you can see it and verify it anywhere, offline, with no tracking server.
 
 ```text
 checkpoints/
 ├── step_042000.safetensors
-└── step_042000.safetensors.modelmeta.yaml   <- travels with the checkpoint
+└── step_042000.safetensors.modelmeta.yaml  <- travels with the checkpoint (SHA-256 linked)
 ```
 
-`modelmeta` binds a machine-readable sidecar to your checkpoint bytes with SHA-256. Copy them together, upload them together, verify them anywhere — no MLflow, no W&B, no tracking backend, no network.
+No tracking backend. No network. Just two files you copy together. `modelmeta verify` checks the bytes match, `modelmeta inspect` shows the story behind the checkpoint.
 
-**What v0.1 establishes:** integrity (these bytes are exactly what the sidecar described) and traceability (what step, loss, dataset, and commit produced them — as self-asserted by the training process).
+> **Beginner in 30 seconds:**
+> 1. Create one `MetaWriter` when training starts — it starts a timer automatically.
+> 2. After each `torch.save()` call `writer.on_checkpoint_saved("ckpt.safetensors", training_state={...})` — it adds `wall_hours`/`gpu_hours` for you.
+> 3. Run `modelmeta inspect ckpt.safetensors` — you see step, loss, dataset, commit, *and how long training has run so far* without W&B.
 
-**What v0.1 does not establish:** that any of that metadata is *true*. Anyone who controls both files can regenerate a matching pair. Unsigned metadata is not provenance. Signed attestations are planned for v0.2.
+**What v0.1 guarantees:** integrity (these bytes are exactly what the sidecar described) and traceability (what step, loss, dataset, commit, and elapsed time produced them — as self-asserted by the training process).
+
+**What v0.1 does not guarantee:** that the metadata is *true*. Anyone who controls both files can regenerate a matching pair. Unsigned metadata is not proof — signed attestations are planned for v0.2.
 
 ## Install
 
@@ -62,11 +67,12 @@ modelmeta verify --json checkpoints/step_042000.safetensors
 
 ## Stamp after saving
 
-In a raw PyTorch loop, call the writer immediately after a successful save:
+In a raw PyTorch loop, create **one** writer when the run starts and reuse it — the timer starts automatically. Call it immediately after a successful save:
 
 ```python
 from modelmeta import MetaWriter
 
+# Timer starts here at run start — no manual clock needed
 writer = MetaWriter(
     run_context={
         "run_id": "run_20260720_001",
@@ -75,28 +81,54 @@ writer = MetaWriter(
     }
 )
 
+# ... training loop ...
+
 sidecar = writer.on_checkpoint_saved(
     "checkpoints/step_042000.safetensors",
     training_state={"global_step": 42000, "loss": 1.2384, "learning_rate": 2e-05},
     compute_state={"framework": "torch", "precision": "bf16", "accelerator_count": 8},
+    # you don't need to pass gpu_hours — it's auto-filled as wall_hours * accelerator_count
+    # pass it only if you want to override: compute_state={"gpu_hours": 12.5}
 )
+
+# Inspect will now show:
+#   wall_hours: 1.2345 (~74.1 min)
+#   gpu_hours: 9.8760
+# If you call it again 30 min later, the next checkpoint shows ~1.73 wall_hours automatically.
 ```
 
-Writes are atomic: the sidecar appears complete or not at all; a crash mid-write leaves the previous sidecar untouched. Unavailable values are omitted, never invented.
-
-Orchestrating git state automatically (still zero torch dependency):
+Need to reset the timer (e.g. you created the writer earlier)? Call `writer.reset_timer()` when training actually starts. For a quick one-off without reusing a writer:
 
 ```python
 from modelmeta.adapters import stamp_checkpoint
 
 stamp_checkpoint("ckpt.pt", training_state={"global_step": 100}, repo_path=".")
+# Note: stamp_checkpoint creates a fresh writer, so elapsed time will be ~0.
+# For real run duration, reuse one MetaWriter as above.
 ```
 
-## Inspect and diff
+Writes are atomic: the sidecar appears complete or not at all; a crash mid-write leaves the previous sidecar untouched. Unavailable values are omitted, never invented.
+
+## Inspect and diff (beginner-friendly)
 
 ```bash
 modelmeta inspect checkpoints/step_042000.safetensors   # human-readable summary
-modelmeta diff old.safetensors new.safetensors          # semantic metadata comparison
+# shows: step, loss, wall_hours/gpu_hours, dataset, commit — no JSON needed
+
+modelmeta inspect --json checkpoints/step_042000.safetensors  # for scripts
+
+modelmeta diff old.safetensors new.safetensors          # what changed between two checkpoints
+```
+
+Example `inspect` output:
+```text
+sidecar: step_042000.safetensors.modelmeta.yaml
+checkpoint.sha256: 0123...abcdef
+training.global_step: 42000
+training.loss: 1.2384
+wall_hours: 1.2345 (~74.1 min)
+gpu_hours: 9.8760
+dataset.name: curated-corpus
 ```
 
 `diff` groups changes into artifact / training / provenance / compute buckets. It compares claims, not quality — a lower loss in the sidecar does not mean a better model.

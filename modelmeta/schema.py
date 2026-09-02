@@ -153,6 +153,11 @@ def _validate_compute(compute: dict[str, Any]) -> None:
         type(gpu_hours) is bool or not isinstance(gpu_hours, (int, float))
     ):
         raise SchemaError("compute.gpu_hours: must be a number")
+    wall_hours = compute.get("wall_hours")
+    if wall_hours is not None and (
+        type(wall_hours) is bool or not isinstance(wall_hours, (int, float))
+    ):
+        raise SchemaError("compute.wall_hours: must be a number")
 
 
 def _validate_integrity(integrity: dict[str, Any]) -> None:

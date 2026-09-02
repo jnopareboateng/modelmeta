@@ -2,6 +2,11 @@
 
 Durable facts for future sessions. Chronology in UPDATE_LOG.md.
 
+## Wednesday evening, 02/09/2026 — auto-timing + beginner README + agent thinking bar
+
+- Auto-timing shipped as shallow pass: `MetaWriter` monotonic timer auto-fills `compute.wall_hours`/`gpu_hours` (`modelmeta/writer.py`), `inspect` now shows wall/gpu hours for beginners, README top rewritten to one-line problem + 30-sec flow. Flaw caught in review: `gpu_hours` relies solely on caller-supplied `accelerator_count` — no GPU detection (`torch.cuda`, env, pynvml) and `stamp_checkpoint` fresh writer gives ~0 elapsed. Durable resume (restart from checkpoint should preserve original start) still missing; requires ledger or `run_started_at`.
+- Process correction from user (02/09/2026 follow-up): deep thinking is ALWAYS mandatory, not conditional on a "thinking high" flag. Every task must load `j-space` and do adversarial flaw scanning before coding — model the system as it actually runs (multi-instance/dynamic, not static default), capture the full multi-part ask without silently narrowing to the simplest piece, and surface flaws/tradeoffs before executing. This bar applies to all coding agents and is persisted in `PROFILE.md`.
+
 ## Identity & repo
 - Repo: `jnopareboateng/modelmeta` (public), WSL path `~/projects/justjosh/modelmeta`.
 - Remote uses SSH alias `github-jnopareboateng` (NOT bare `github.com`, which routes to the minoHealth key).

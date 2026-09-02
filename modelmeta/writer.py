@@ -44,9 +44,33 @@ class MetaWriter:
     an existing sidecar: every write fully replaces it atomically.
     """
 
-    def __init__(self, run_context: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        run_context: Mapping[str, Any] | None = None,
+        *,
+        _start_monotonic: float | None = None,
+    ) -> None:
         self._run_context: dict[str, Any] = copy.deepcopy(dict(run_context)) if run_context else {}
         self.last_hash_seconds: float | None = None
+        # Monotonic timer starts when the run starts (writer creation).
+        # Elapsed wall time is derived per-checkpoint as gpu/wall hours.
+        self._run_start_monotonic: float = (
+            _start_monotonic if _start_monotonic is not None else time.monotonic()
+        )
+
+    def reset_timer(self) -> None:
+        """Reset the run timer to now. Call when training actually starts."""
+        self._run_start_monotonic = time.monotonic()
+
+    @property
+    def elapsed_seconds(self) -> float:
+        """Wall-clock seconds since the writer (run) was started."""
+        return time.monotonic() - self._run_start_monotonic
+
+    @property
+    def elapsed_hours(self) -> float:
+        """Wall-clock hours since the writer (run) was started."""
+        return self.elapsed_seconds / 3600.0
 
     def on_checkpoint_saved(
         self,
@@ -68,10 +92,61 @@ class MetaWriter:
         if is_temp_name(os.path.basename(target)) or _TEMP_TARGET_PATTERN.search(target):
             raise UnsupportedTargetError(f"refusing to describe a temporary file: {target}")
 
+        # Auto-fill elapsed duration into compute_state if caller didn't provide it.
+        # This gives beginners "how long did training take so far" without W&B.
+        # Respects explicit caller value; computes wall_hours and gpu_hours.
+        if compute_state is None:
+            effective_compute_dict: dict[str, Any] = {}
+        else:
+            effective_compute_dict = copy.deepcopy(dict(compute_state))
+
+        # Best-effort vendor-agnostic accelerator detection (NVIDIA/AMD/Intel/Ascend/Biren/CPU)
+        # — only when caller didn't declare count/type, never overwrites explicit values.
+        # Detection is informational (visible/available), not proof of utilization; only the
+        # training framework knows if the accelerator was actually used. Wall-clock time is
+        # always authoritative; gpu_hours = wall_hours * count is only as good as the count.
+        if (
+            "accelerator_count" not in effective_compute_dict
+            or "accelerator_type" not in effective_compute_dict
+        ):
+            try:
+                from modelmeta.detect import detect_accelerators
+
+                detected = detect_accelerators()
+                if detected.get("source") != "fallback":
+                    if "accelerator_count" not in effective_compute_dict:
+                        effective_compute_dict["accelerator_count"] = detected.get(
+                            "accelerator_count"
+                        )
+                    if "accelerator_type" not in effective_compute_dict:
+                        dtype = detected.get("accelerator_type")
+                        if isinstance(dtype, str) and dtype not in ("unknown", "cpu"):
+                            effective_compute_dict["accelerator_type"] = dtype
+            except Exception:
+                pass
+
+        # Only auto-fill if gpu_hours is missing (None or absent)
+        if effective_compute_dict.get("gpu_hours") is None:
+            wall_hours = self.elapsed_seconds / 3600.0
+            count = effective_compute_dict.get("accelerator_count")
+            if isinstance(count, int) and count > 0:
+                gpu_hours = wall_hours * float(count)
+            else:
+                gpu_hours = wall_hours
+            if effective_compute_dict.get("gpu_hours") is None:
+                effective_compute_dict["gpu_hours"] = gpu_hours
+            # Always add wall_hours for beginner clarity when auto-filling
+            if "wall_hours" not in effective_compute_dict:
+                effective_compute_dict["wall_hours"] = wall_hours
+
+        # Clean explicit None values (normalized to omission in canonical JSON)
+        effective_compute_dict = {k: v for k, v in effective_compute_dict.items() if v is not None}
+        effective_compute: dict[str, Any] | None = effective_compute_dict or None
+
         caller_sections = {
             "run_context": self._run_context or None,
             "training_state": training_state,
-            "compute_state": compute_state,
+            "compute_state": effective_compute,
             "lineage": lineage,
             "optimizer_state": optimizer_state,
         }

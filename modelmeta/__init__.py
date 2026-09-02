@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from modelmeta.adapters.torch_loop import capture_git_state, stamp_checkpoint
 from modelmeta.canonical import canonical_bytes, is_valid_timestamp, normalize, utc_now
+from modelmeta.detect import detect_accelerators
 from modelmeta.errors import (
     ModelMetaError,
     RaceDetectedError,
@@ -33,6 +34,7 @@ __all__ = [
     "assert_no_secret_keys",
     "canonical_bytes",
     "capture_git_state",
+    "detect_accelerators",
     "is_valid_timestamp",
     "load_sidecar",
     "normalize",
