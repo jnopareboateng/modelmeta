@@ -6,7 +6,7 @@ export const MyComposition = () => {
     <Composition
       id="ModelmetaDemo"
       component={Demo}
-      durationInFrames={1437}
+      durationInFrames={1785}
       fps={30}
       width={1080}
       height={1080}

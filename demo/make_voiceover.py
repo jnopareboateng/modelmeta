@@ -1,19 +1,15 @@
 """Regenerate the film's narration as ONE voice, guaranteed uniform.
 
 Run from the repo root:  python demo/make_voiceover.py
-Requires: OPENROUTER_API_KEY + MODEL_ID in the repo-root .env (never committed),
+Requires: DEEPGRAM_API_KEY in the repo-root .env (never committed),
           ffmpeg + ffprobe on PATH, faster-whisper (uv pip install faster-whisper).
 
-Method: a single TTS request renders the whole script in one generation, so
-timbre, pace and character cannot drift between scenes (separate requests can
-never guarantee that, even at low temperature). Scenes are joined with
-[long-break] markers, then split at word-exact boundaries found by local
+Method: a single TTS request (Deepgram Flux, fixed voice model) renders the
+whole pitch in one generation, so timbre, pace and character cannot drift
+between scenes. Scenes are then split at word-exact boundaries found by local
 forced alignment (faster-whisper word timestamps on each scene's last word).
-Silence-length heuristics were tried and failed: [long-break] pauses are no
-longer than ordinary sentence pauses, so length-ranking picks wrong cuts.
 
-Direction uses fish-audio S2 [bracket] cues (one primary direction per
-sentence, slow keynote delivery), temperature=0.2, normalize on.
+Voice: flux-hannah-en on POST /v2/speak, expressivity=1 (salesman energy).
 """
 
 from __future__ import annotations
@@ -29,17 +25,22 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 ENV_PATH = REPO_ROOT / ".env"
 OUT_DIR = REPO_ROOT / "demo" / "mm-video" / "public" / "vo"
 
+VOICE_MODEL = "flux-hannah-en"
+
 LINES = {
-    "s1": "[calm, warm narrator, speaking slowly and clearly] Every training run ends the same way. [soft tone] A file full of weights, with no memory of how it got there.",
-    "s2": "[warm and steady, speaking slowly] Three hundred students. Study hours in, exam scores out. [confident] A real model, trained in under half a second.",
-    "s3": "[calm, speaking slowly and clearly] modelmeta stamps it. One call binds the metadata to the bytes. [confident] Hash linked. Timed automatically.",
-    "s4": "[relaxed, warm narrator] Inspect it anywhere. The dataset. The accuracy. The training time. [soft tone] No server. No account.",
-    "s5": "[calm] Verify before you load. [confident] Match means safe. [firm] And when a single byte changes, it gets caught.",
-    "s6": "[warm, speaking slowly] Models forget. [soft tone] Sidecars don't. [confident] modelmeta.",
+    "s1": "You ship the weights. But the story behind them is scattered across dashboards, run logs, and somebody's memory of how it got there. Until today.",
+    "s2": "Watch this. Three hundred students, study hours in, exam scores out. A real model, trained in under half a second, verified on real students.",
+    "s3": "One line of code and modelmeta stamps it. Dataset, accuracy, training time. Hash-linked to the bytes and timed automatically. No tracking server, no account, no YAML written by hand at midnight.",
+    "s4": "Anyone, anywhere, can inspect it. Offline. The whole story travels with the file.",
+    "s5": "And before you ever load it, verify. Match means safe. One changed byte gets caught. That is your pre-load gate against corrupt or malicious checkpoints.",
+    "s6": "Models forget. Sidecars don't. Pip install modelmeta.",
 }
 
-# Last spoken word of scenes 1-5; each is unique in the script.
-ANCHORS = ["there", "second", "automatically", "account", "caught"]
+# Final word of scenes 1-5; backward search takes the last occurrence, so a
+# repeated word is fine as long as its LAST use ends the scene. Must be the
+# TRUE final word (mid-scene anchors shift every later cut), aligner-stable
+# (no digits/percent: those render as numerals), apostrophe-stripped.
+ANCHORS = ["today", "students", "midnight", "file", "checkpoints"]
 
 
 def load_env(path: pathlib.Path) -> dict[str, str]:
@@ -54,18 +55,12 @@ def load_env(path: pathlib.Path) -> dict[str, str]:
     return vals
 
 
-def synthesize(api_key: str, model: str, text: str) -> bytes:
-    payload = {
-        "model": model,
-        "input": text,
-        "response_format": "mp3",
-        "temperature": 0.2,
-        "normalize": True,
-    }
+def synthesize(api_key: str, text: str) -> bytes:
+    url = f"https://api.deepgram.com/v2/speak?model={VOICE_MODEL}&expressivity=1"
     request = urllib.request.Request(
-        "https://openrouter.ai/api/v1/audio/speech",
-        data=json.dumps(payload).encode(),
-        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+        url,
+        data=json.dumps({"text": text}).encode(),
+        headers={"Authorization": "Token " + api_key, "Content-Type": "application/json"},
     )
     with urllib.request.urlopen(request, timeout=300) as response:
         return response.read()
@@ -86,15 +81,14 @@ def main() -> None:
     except ImportError:
         raise SystemExit("faster-whisper required: uv pip install faster-whisper")
     env = load_env(ENV_PATH)
-    api_key = env.get("OPENROUTER_API_KEY", "")
-    model = env.get("MODEL_ID", "")
-    if not api_key or not model:
-        raise SystemExit("OPENROUTER_API_KEY and MODEL_ID must be set in .env")
+    api_key = env.get("DEEPGRAM_API_KEY", "")
+    if not api_key:
+        raise SystemExit("DEEPGRAM_API_KEY must be set in .env")
 
     keys = list(LINES.keys())
-    script = " [long-break] ".join(LINES.values())
-    print(f"single-take script: {len(script)} chars")
-    audio = synthesize(api_key, model, script)
+    script = "\n\n".join(LINES.values())
+    print(f"single-take script: {len(script)} chars, voice {VOICE_MODEL}")
+    audio = synthesize(api_key, script)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
         tmp.write(audio)
@@ -103,7 +97,7 @@ def main() -> None:
         whisper = WhisperModel("base.en", device="cpu", compute_type="int8")
         segments, _ = whisper.transcribe(str(full), word_timestamps=True, vad_filter=True)
         words = [
-            (w.word.strip(" .,!?").lower(), w.start, w.end)
+            (w.word.strip(" .,!?'’\"").lower(), w.start, w.end)
             for segment in segments
             for w in segment.words
         ]
@@ -112,7 +106,12 @@ def main() -> None:
             matches = [(s, e) for (w, s, e) in words if w == anchor]
             if not matches:
                 raise SystemExit(f"anchor word missing from alignment: {anchor}")
-            ends.append(matches[0][1] + 0.3)
+            if len(matches) > 1:
+                print(f"note: anchor {anchor!r} occurs {len(matches)}x, using last")
+            ends.append(matches[-1][1] + 0.3)
+        for anchor in ANCHORS:
+            hits = [(s, e) for (w, s, e) in words if w == anchor]
+            print(f"anchor {anchor}: {hits[-1][0]:.2f}-{hits[-1][1]:.2f}")
         total = duration(full)
         bounds = [0.0, *ends, total]
         for i, name in enumerate(keys):

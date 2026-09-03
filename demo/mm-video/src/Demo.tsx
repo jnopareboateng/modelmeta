@@ -592,7 +592,7 @@ const Scene6: React.FC = () => {
   );
 };
 
-export const SCENE_FRAMES = [220, 310, 276, 313, 252, 186];
+export const SCENE_FRAMES = [285, 321, 452, 313, 348, 186];
 const TRANSITION_FRAMES = 24;
 
 export const Demo: React.FC = () => {
