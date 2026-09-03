@@ -9,6 +9,9 @@ and stamps its hash-linked sidecar. Verifies clean before finishing.
 
 from __future__ import annotations
 
+# The direct script entry point adds the repository root before importing the
+# local package, so this import block intentionally follows executable setup.
+# ruff: noqa: E402
 import hashlib
 import pathlib
 import pickle
@@ -20,12 +23,11 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import numpy as np
 import yaml
+from modelmeta import MetaWriter
+from modelmeta.verify import verify_checkpoint
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
-
-from modelmeta import MetaWriter
-from modelmeta.verify import verify_checkpoint
 
 
 def main() -> None:
@@ -68,7 +70,8 @@ def main() -> None:
         compute_state={"framework": "sklearn", "accelerator_count": 1, "accelerator_type": "cpu"},
     )
     result = verify_checkpoint(str(ckpt))
-    meta = yaml.safe_load(open(sidecar))
+    with open(sidecar) as handle:
+        meta = yaml.safe_load(handle)
     print(f"sidecar: {sidecar}")
     print(f"verify: {result.status} ({result.exit_code})")
     print(f"r2: {r2:.4f} rmse: {rmse:.4f} train_secs: {train_secs:.2f}")

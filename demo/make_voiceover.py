@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
-import sys
 import tempfile
 import urllib.request
 
@@ -28,19 +27,30 @@ OUT_DIR = REPO_ROOT / "demo" / "mm-video" / "public" / "vo"
 VOICE_MODEL = "flux-hannah-en"
 
 LINES = {
-    "s1": "You ship the weights. But the story behind them is scattered across dashboards, run logs, and somebody's memory of how it got there. Until today.",
-    "s2": "Watch this. Three hundred students, study hours in, exam scores out. A real model, trained in under half a second, verified on real students.",
-    "s3": "One line of code and modelmeta stamps it. Dataset, accuracy, training time. Hash-linked to the bytes and timed automatically. No tracking server, no account, no YAML written by hand at midnight.",
-    "s4": "Anyone, anywhere, can inspect it. Offline. The whole story travels with the file.",
-    "s5": "And before you ever load it, verify. Match means safe. One changed byte gets caught. That is your pre-load gate against corrupt or malicious checkpoints.",
-    "s6": "Models forget. Sidecars don't. Pip install modelmeta.",
+    "s1": (
+        "A model is more than its weights. But the data, score, training time, "
+        "and exact bytes rarely travel with them."
+    ),
+    "s2": (
+        "A real run: three hundred students. Study hours in. Exam scores out. "
+        "Training takes less than half a second. Fast."
+    ),
+    "s3": (
+        "One call with modelmeta stamps the model and writes a sidecar: dataset, "
+        "accuracy, runtime, and a SHA two five six link, next to the file - portable."
+    ),
+    "s4": "Inspect it anywhere. The whole story travels with the file. Offline.",
+    "s5": (
+        "Verify before loading. Match. Change one byte? The gate stops. Models "
+        "forget. Sidecars don't. Install modelmeta today."
+    ),
 }
 
 # Final word of scenes 1-5; backward search takes the last occurrence, so a
 # repeated word is fine as long as its LAST use ends the scene. Must be the
 # TRUE final word (mid-scene anchors shift every later cut), aligner-stable
 # (no digits/percent: those render as numerals), apostrophe-stripped.
-ANCHORS = ["today", "students", "midnight", "file", "checkpoints"]
+ANCHORS = ["bytes", "fast", "portable", "offline", "today"]
 
 
 def load_env(path: pathlib.Path) -> dict[str, str]:
@@ -56,7 +66,7 @@ def load_env(path: pathlib.Path) -> dict[str, str]:
 
 
 def synthesize(api_key: str, text: str) -> bytes:
-    url = f"https://api.deepgram.com/v2/speak?model={VOICE_MODEL}&expressivity=1"
+    url = f"https://api.deepgram.com/v2/speak?model={VOICE_MODEL}&expressivity=1&speed=1.15"
     request = urllib.request.Request(
         url,
         data=json.dumps({"text": text}).encode(),
@@ -68,9 +78,10 @@ def synthesize(api_key: str, text: str) -> bytes:
 
 def duration(path: pathlib.Path) -> float:
     proc = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-         "-of", "csv=p=0", str(path)],
-        capture_output=True, text=True, timeout=30,
+        ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     return float(proc.stdout.strip())
 
@@ -79,7 +90,7 @@ def main() -> None:
     try:
         from faster_whisper import WhisperModel
     except ImportError:
-        raise SystemExit("faster-whisper required: uv pip install faster-whisper")
+        raise SystemExit("faster-whisper required: uv pip install faster-whisper") from None
     env = load_env(ENV_PATH)
     api_key = env.get("DEEPGRAM_API_KEY", "")
     if not api_key:
@@ -97,7 +108,7 @@ def main() -> None:
         whisper = WhisperModel("base.en", device="cpu", compute_type="int8")
         segments, _ = whisper.transcribe(str(full), word_timestamps=True, vad_filter=True)
         words = [
-            (w.word.strip(" .,!?'’\"").lower(), w.start, w.end)
+            (w.word.strip(" .,!? '" + '"' + "\u2019").lower(), w.start, w.end)
             for segment in segments
             for w in segment.words
         ]
@@ -118,10 +129,26 @@ def main() -> None:
             start = max(0.0, bounds[i] - (0.05 if i > 0 else 0.0))
             out = OUT_DIR / f"{name}.mp3"
             subprocess.run(
-                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                 "-ss", f"{start:.3f}", "-to", f"{bounds[i + 1]:.3f}",
-                 "-i", str(full), "-c:a", "libmp3lame", "-b:a", "128k", str(out)],
-                check=True, timeout=120,
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-ss",
+                    f"{start:.3f}",
+                    "-to",
+                    f"{bounds[i + 1]:.3f}",
+                    "-i",
+                    str(full),
+                    "-c:a",
+                    "libmp3lame",
+                    "-b:a",
+                    "128k",
+                    str(out),
+                ],
+                check=True,
+                timeout=120,
             )
             print(f"{name}: {duration(out):.2f}s")
     finally:

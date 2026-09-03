@@ -2,116 +2,113 @@ import React from "react";
 import {
   AbsoluteFill,
   Audio,
+  Easing,
+  Sequence,
+  interpolate,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
-  interpolate,
-  Easing,
 } from "remotion";
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
 import { fade } from "@remotion/transitions/fade";
-import { POINTS, LINE, METRICS } from "./data";
+import { LINE, METRICS, POINTS } from "./data";
 
-const SANS =
-  "'Inter', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif";
-const MONO =
-  "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+const SANS = "'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif";
+const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const INK = "#F5F5F7";
-const SECONDARY = "rgba(245, 245, 247, 0.62)";
-const FAINT = "rgba(245, 245, 247, 0.38)";
+const SECONDARY = "rgba(245, 245, 247, 0.64)";
+const MUTED = "rgba(245, 245, 247, 0.42)";
 const GREEN = "#30D158";
 const RED = "#FF453A";
-const HAIRLINE = "rgba(255, 255, 255, 0.14)";
-const GLASS = "rgba(255, 255, 255, 0.055)";
+const BLUE = "#64D2FF";
+const HAIRLINE = "rgba(255, 255, 255, 0.15)";
+const PANEL = "rgba(255, 255, 255, 0.055)";
 const ENTER = Easing.bezier(0.16, 1, 0.3, 1);
 const POP = Easing.bezier(0.34, 1.56, 0.64, 1);
-// Scene entrance offset: TransitionSeries plays the incoming scene from local
-// frame 0 *during* the cross-dissolve, so every in-scene timing is pushed later
-// by the transition length. Nothing meaningful plays under the dissolve.
-const IN = 0.8;
+const TRANSITION_FRAMES = 18;
+const WAKE = 0.62;
 
 const GRAIN =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E\")";
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E\")";
 
-const fadeIn = (frame: number, fps: number, at: number, dur = 22) =>
-  interpolate(frame, [(at + IN) * fps, (at + IN) * fps + dur], [0, 1], {
+const reveal = (frame: number, fps: number, at: number, duration = 20) =>
+  interpolate(frame, [(at + WAKE) * fps, (at + WAKE) * fps + duration], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: ENTER,
   });
 
-const rise = (frame: number, fps: number, at: number, px = 40) =>
-  interpolate(frame, [(at + IN) * fps, (at + IN) * fps + 28], [px, 0], {
+const lift = (frame: number, fps: number, at: number, distance = 28) =>
+  interpolate(frame, [(at + WAKE) * fps, (at + WAKE) * fps + 24], [distance, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: ENTER,
   });
 
-const shakeX = (frame: number, fps: number, at: number) => {
-  const t = frame - (at + IN) * fps;
-  if (t < 0) return 0;
-  return Math.sin(t * 1.1) * 15 * Math.exp(-t * 0.13);
-};
-
-// Black entrance veil: hides the scene while the cross-dissolve is running,
-// then gets out of the way. Scene 1 uses a short veil as a cinematic open.
-const Veil: React.FC<{ dur?: number }> = ({ dur = 24 }) => {
-  const frame = useCurrentFrame();
-  const o = interpolate(frame, [0, dur], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  return <AbsoluteFill style={{ background: "#000", opacity: o }} />;
-};
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const Backdrop: React.FC = () => (
   <AbsoluteFill style={{ background: "#000" }}>
     <AbsoluteFill
       style={{
         background:
-          "radial-gradient(1000px 560px at 50% -8%, rgba(48,209,88,0.10), transparent 62%), radial-gradient(900px 620px at 50% 112%, rgba(10,132,255,0.10), transparent 60%)",
+          "radial-gradient(900px 520px at 50% -4%, rgba(48,209,88,0.11), transparent 65%), radial-gradient(760px 520px at 50% 112%, rgba(10,132,255,0.09), transparent 65%)",
       }}
     />
-    <AbsoluteFill
-      style={{ backgroundImage: GRAIN, opacity: 0.05, mixBlendMode: "overlay" }}
-    />
+    <AbsoluteFill style={{ backgroundImage: GRAIN, opacity: 0.045, mixBlendMode: "overlay" }} />
     <AbsoluteFill
       style={{
         background:
-          "radial-gradient(120% 90% at 50% 45%, transparent 58%, rgba(0,0,0,0.5) 100%)",
+          "radial-gradient(125% 92% at 50% 45%, transparent 54%, rgba(0,0,0,0.58) 100%)",
       }}
     />
   </AbsoluteFill>
 );
 
-const Eyebrow: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+const SceneVeil: React.FC = () => {
+  const frame = useCurrentFrame();
+  return (
+    <AbsoluteFill
+      style={{
+        background: "#000",
+        opacity: interpolate(frame, [0, TRANSITION_FRAMES], [1, 0], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+          easing: Easing.out(Easing.cubic),
+        }),
+      }}
+    />
+  );
+};
+
+const Eyebrow: React.FC<{ children: React.ReactNode; color?: string }> = ({ children, color = SECONDARY }) => (
   <div
     style={{
       fontFamily: SANS,
-      fontSize: 25,
+      fontSize: 22,
       fontWeight: 600,
-      letterSpacing: 8,
+      letterSpacing: 7,
       textTransform: "uppercase",
-      color: SECONDARY,
-      marginBottom: 26,
+      color,
+      marginBottom: 24,
     }}
   >
     {children}
   </div>
 );
 
-const H1: React.FC<{ children: React.ReactNode; color?: string; size?: number }> = ({
+const H1: React.FC<{ children: React.ReactNode; size?: number; color?: string }> = ({
   children,
+  size = 82,
   color = INK,
-  size = 92,
 }) => (
   <div
     style={{
       fontFamily: SANS,
       fontSize: size,
       fontWeight: 700,
-      letterSpacing: -3,
-      lineHeight: 1.04,
+      letterSpacing: -3.5,
+      lineHeight: 1.02,
       color,
     }}
   >
@@ -119,526 +116,340 @@ const H1: React.FC<{ children: React.ReactNode; color?: string; size?: number }>
   </div>
 );
 
-const Whisper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div
-    style={{
-      fontFamily: SANS,
-      fontSize: 31,
-      fontWeight: 500,
-      color: SECONDARY,
-      lineHeight: 1.6,
-    }}
-  >
+const Body: React.FC<{ children: React.ReactNode; color?: string; size?: number }> = ({
+  children,
+  color = SECONDARY,
+  size = 30,
+}) => (
+  <div style={{ fontFamily: SANS, fontSize: size, fontWeight: 500, color, lineHeight: 1.45 }}>
     {children}
   </div>
 );
 
-const Glass: React.FC<{ children: React.ReactNode; glow?: string }> = ({
+const Glass: React.FC<{ children: React.ReactNode; glow?: string; style?: React.CSSProperties }> = ({
   children,
   glow,
+  style,
 }) => (
   <div
     style={{
-      background: GLASS,
-      backdropFilter: "blur(28px) saturate(1.4)",
-      WebkitBackdropFilter: "blur(28px) saturate(1.4)",
+      background: PANEL,
       border: `1px solid ${HAIRLINE}`,
       borderRadius: 28,
-      padding: "34px 42px",
-      boxShadow: glow ?? "0 30px 80px rgba(0,0,0,0.5)",
+      boxShadow: glow ?? "0 30px 90px rgba(0,0,0,0.48)",
+      backdropFilter: "blur(24px) saturate(1.25)",
+      WebkitBackdropFilter: "blur(24px) saturate(1.25)",
+      ...style,
     }}
   >
     {children}
   </div>
 );
 
-const Pill: React.FC<{ children: React.ReactNode; accent?: string }> = ({
+const Pill: React.FC<{ children: React.ReactNode; accent?: "green" | "blue" | "neutral" }> = ({
   children,
-  accent = INK,
-}) => (
-  <div
-    style={{
-      fontFamily: SANS,
-      fontSize: 30,
-      fontWeight: 600,
-      color: accent === INK ? INK : "#000",
-      background: accent === INK ? "rgba(255,255,255,0.1)" : accent,
-      border: `1px solid ${accent === INK ? HAIRLINE : "transparent"}`,
-      borderRadius: 999,
-      padding: "14px 30px",
-      fontVariantNumeric: "tabular-nums",
-    }}
-  >
-    {children}
-  </div>
-);
-
-const LogoMark: React.FC<{ size?: number }> = ({ size = 104 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <rect x={1.5} y={1.5} width={21} height={21} rx={6} stroke={HAIRLINE} strokeWidth={1.2} />
-    <path
-      d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
-      stroke={GREEN}
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
-      stroke={GREEN}
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const DocIcon: React.FC = () => (
-  <svg width={44} height={44} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-    <path
-      d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-      stroke={INK}
-      strokeWidth={1.6}
-      strokeLinejoin="round"
-    />
-    <path d="M14 2v6h6" stroke={INK} strokeWidth={1.6} strokeLinejoin="round" />
-  </svg>
-);
-
-const TypeLine: React.FC<{ text: string; at?: number; speed?: number }> = ({
-  text,
-  at = 0,
-  speed = 20,
+  accent = "neutral",
 }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const n = Math.floor(
-    interpolate(
-      frame,
-      [(at + IN) * fps, (at + IN) * fps + (text.length / speed) * fps],
-      [0, text.length + 1],
-      {
-        extrapolateLeft: "clamp",
-        extrapolateRight: "clamp",
-      },
-    ),
-  );
-  const cursor = frame % 18 < 10 ? 1 : 0;
+  const green = accent === "green";
+  const blue = accent === "blue";
   return (
-    <div style={{ fontFamily: MONO, fontSize: 41, color: INK, display: "flex", alignItems: "center" }}>
-      <span style={{ color: GREEN, marginRight: 18 }}>$</span>
-      <span>{text.slice(0, n)}</span>
-      <span
-        style={{
-          display: "inline-block",
-          width: 23,
-          height: 46,
-          background: GREEN,
-          marginLeft: 8,
-          opacity: cursor,
-          borderRadius: 3,
-        }}
-      />
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "13px 24px",
+        borderRadius: 999,
+        border: `1px solid ${green ? "transparent" : blue ? "rgba(100,210,255,0.30)" : HAIRLINE}`,
+        background: green ? GREEN : blue ? "rgba(100,210,255,0.10)" : "rgba(255,255,255,0.085)",
+        color: green ? "#061107" : blue ? BLUE : INK,
+        fontFamily: SANS,
+        fontSize: 25,
+        fontWeight: 600,
+        fontVariantNumeric: "tabular-nums",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
     </div>
   );
 };
 
-const VO: React.FC<{ id: string }> = ({ id }) => (
-  <Audio src={staticFile(`vo/${id}.mp3`)} />
+const LinkMark: React.FC<{ size?: number; color?: string }> = ({ size = 48, color = GREEN }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
 );
 
-/* ---------------- Scene 1 (220f ≈ 7.3s, VO 5.77s) ---------------- */
+const FileMark: React.FC<{ color?: string }> = ({ color = INK }) => (
+  <svg width={48} height={48} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke={color} strokeWidth={1.45} strokeLinejoin="round" />
+    <path d="M14 2v6h6" stroke={color} strokeWidth={1.45} strokeLinejoin="round" />
+  </svg>
+);
+
+const CheckMark: React.FC<{ color?: string; size?: number }> = ({ color = GREEN, size = 32 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <path d="m5 12.5 4.4 4.4L19 7.3" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const TypeLine: React.FC<{ command: string; sceneAt?: number }> = ({ command, sceneAt = 0 }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const typed = Math.floor(
+    interpolate(frame, [(sceneAt + WAKE) * fps, (sceneAt + WAKE) * fps + (command.length / 25) * fps], [0, command.length], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+      easing: Easing.linear,
+    }),
+  );
+  const cursorVisible = frame % 18 < 11;
+  return (
+    <div style={{ display: "flex", alignItems: "center", fontFamily: MONO, fontSize: 32, color: INK }}>
+      <span style={{ color: GREEN, marginRight: 14 }}>$</span>
+      <span>{command.slice(0, typed)}</span>
+      <span style={{ width: 17, height: 34, marginLeft: 7, borderRadius: 2, background: GREEN, opacity: cursorVisible ? 1 : 0 }} />
+    </div>
+  );
+};
+
+const Voice: React.FC<{ id: string }> = ({ id }) => (
+  <Sequence from={TRANSITION_FRAMES} layout="none">
+    <Audio src={staticFile(`vo/${id}.mp3`)} volume={0.98} />
+  </Sequence>
+);
+
+const Sfx: React.FC<{ id: string; from: number; volume?: number }> = ({ id, from, volume = 0.2 }) => (
+  <Sequence from={Math.round(from * 30) + TRANSITION_FRAMES} layout="none">
+    <Audio src={staticFile(`sfx/${id}.wav`)} volume={volume} />
+  </Sequence>
+);
+
 const Scene1: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   return (
-    <AbsoluteFill style={{ justifyContent: "center", padding: 100 }}>
-      <VO id="s1" />
-      <Veil dur={12} />
-      <div style={{ opacity: fadeIn(frame, fps, 0.2) }}>
-        <Eyebrow>The problem</Eyebrow>
+    <AbsoluteFill style={{ padding: 96, justifyContent: "center" }}>
+      <Voice id="s1" />
+      <Sfx id="pulse" from={0.2} volume={0.18} />
+      <SceneVeil />
+      <div style={{ opacity: reveal(frame, fps, 0.05) }}><Eyebrow>The problem</Eyebrow></div>
+      <div style={{ opacity: reveal(frame, fps, 0.35), translate: `0px ${lift(frame, fps, 0.35)}px` }}><H1>Every model has a story.</H1></div>
+      <div style={{ height: 20 }} />
+      <div style={{ opacity: reveal(frame, fps, 1.35), translate: `0px ${lift(frame, fps, 1.35)}px` }}><H1 color={SECONDARY}>It rarely travels with the weights.</H1></div>
+      <div style={{ height: 58 }} />
+      <div style={{ opacity: reveal(frame, fps, 2.7), translate: `0px ${lift(frame, fps, 2.7)}px` }}>
+        <Glass style={{ padding: "26px 30px" }}>
+          <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+            <FileMark color={MUTED} />
+            <div style={{ fontFamily: MONO, fontSize: 27, color: INK }}>score_model.pkl</div>
+            <div style={{ flex: 1 }} />
+            {["data", "score", "time"].map((label, index) => (
+              <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: index ? 18 : 0 }}>
+                <div style={{ width: 8, height: 8, borderRadius: 99, background: RED, boxShadow: `0 0 12px ${RED}` }} />
+                <div style={{ fontFamily: MONO, fontSize: 21, color: MUTED }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </Glass>
       </div>
-      <div style={{ opacity: fadeIn(frame, fps, 0.6), transform: `translateY(${rise(frame, fps, 0.6)}px)` }}>
-        <H1>You trained a model.</H1>
-      </div>
-      <div style={{ height: 10 }} />
-      <div style={{ opacity: fadeIn(frame, fps, 1.8), transform: `translateY(${rise(frame, fps, 1.8)}px)` }}>
-        <H1 color={SECONDARY}>It remembers nothing.</H1>
-      </div>
-      <div style={{ height: 52 }} />
-      <div style={{ opacity: fadeIn(frame, fps, 3.2) }}>
-        <Whisper>How long it took — gone. What data made it — gone.</Whisper>
-      </div>
-      <div style={{ opacity: fadeIn(frame, fps, 4) }}>
-        <Whisper>How good it is — gone.</Whisper>
-      </div>
+      <div style={{ height: 30 }} />
+      <div style={{ opacity: reveal(frame, fps, 4.15) }}><Body>Context gets lost between the checkpoint and the next person.</Body></div>
     </AbsoluteFill>
   );
 };
 
-/* ---------------- Scene 2 (310f ≈ 10.3s, VO 8.83s) ---------------- */
-const PLOT_W = 920;
-const PLOT_H = 470;
-const PAD = { l: 64, r: 30, t: 26, b: 30 };
-const px = (nx: number) => PAD.l + nx * (PLOT_W - PAD.l - PAD.r);
-const py = (ny: number) => PAD.t + ny * (PLOT_H - PAD.t - PAD.b);
+const CHART_W = 888;
+const CHART_H = 390;
+const AXIS = { left: 56, right: 26, top: 28, bottom: 44 };
+const plotWidth = CHART_W - AXIS.left - AXIS.right;
+const plotHeight = CHART_H - AXIS.top - AXIS.bottom;
+const plotX = (value: number) => AXIS.left + value * plotWidth;
+const plotY = (value: number) => AXIS.top + value * plotHeight;
 
 const Scene2: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const dotsStart = (1.2 + IN) * fps;
-  const lineAt = (5.4 + IN) * fps;
-  const lineP = interpolate(frame, [lineAt, lineAt + 1.8 * fps], [0, 1], {
+  const dotsStart = (1.1 + WAKE) * fps;
+  const lineStart = (4.8 + WAKE) * fps;
+  const progress = interpolate(frame, [lineStart, lineStart + 1.8 * fps], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: Easing.out(Easing.cubic),
   });
-  // Clamp trend endpoints inside the axes so the line can never leave the plot.
-  const cy = (v: number) => Math.min(0.965, Math.max(0.035, v));
-  const x1 = px(LINE.x1);
-  const y1 = py(cy(LINE.y1));
-  const x2 = px(LINE.x2);
-  const y2 = py(cy(LINE.y2));
+  const startX = plotX(clamp(LINE.x1, 0.025, 0.975));
+  const endX = plotX(clamp(LINE.x2, 0.025, 0.975));
+  const startY = plotY(clamp(LINE.y1, 0.06, 0.94));
+  const endY = plotY(clamp(LINE.y2, 0.06, 0.94));
+  const travelerX = startX + (endX - startX) * progress;
+  const travelerY = startY + (endY - startY) * progress;
   return (
-    <AbsoluteFill style={{ justifyContent: "center", padding: 90 }}>
-      <VO id="s2" />
-      <Veil />
-      <div style={{ opacity: fadeIn(frame, fps, 0.2) }}>
-        <Eyebrow>A real run · zero jargon</Eyebrow>
-      </div>
-      <div style={{ opacity: fadeIn(frame, fps, 0.5), transform: `translateY(${rise(frame, fps, 0.5)}px)` }}>
-        <H1 size={74}>Study hours → exam score.</H1>
-      </div>
-      <div style={{ height: 34 }} />
-      <div style={{ opacity: fadeIn(frame, fps, 0.9) }}>
-        <div
-          style={{
-            background: GLASS,
-            backdropFilter: "blur(28px)",
-            border: `1px solid ${HAIRLINE}`,
-            borderRadius: 28,
-            padding: 26,
-            boxShadow: "0 30px 80px rgba(0,0,0,0.5)",
-          }}
-        >
-          <svg width={PLOT_W} height={PLOT_H}>
-            <defs>
-              <clipPath id="plotClip">
-                <rect
-                  x={PAD.l}
-                  y={PAD.t}
-                  width={PLOT_W - PAD.l - PAD.r}
-                  height={PLOT_H - PAD.t - PAD.b}
-                  rx={10}
-                />
-              </clipPath>
-            </defs>
-            <g clipPath="url(#plotClip)">
-            {[0.25, 0.5, 0.75].map((g) => (
-              <line
-                key={g}
-                x1={PAD.l}
-                x2={PLOT_W - PAD.r}
-                y1={PAD.t + g * (PLOT_H - PAD.t - PAD.b)}
-                y2={PAD.t + g * (PLOT_H - PAD.t - PAD.b)}
-                stroke="rgba(255,255,255,0.09)"
-                strokeWidth={1.5}
-              />
-            ))}
-            {POINTS.map((p, i) => {
-              const lf = dotsStart + i * 1.6;
-              const r = interpolate(frame, [lf, lf + 16], [0, 7], {
-                extrapolateLeft: "clamp",
-                extrapolateRight: "clamp",
-                easing: POP,
-              });
-              const o = interpolate(frame, [lf, lf + 9], [0, 0.8], {
-                extrapolateLeft: "clamp",
-                extrapolateRight: "clamp",
-              });
-              return <circle key={i} cx={px(p[0])} cy={py(p[1])} r={r} fill="#FFF" opacity={o} />;
-            })}
-            <line
-              x1={x1}
-              y1={y1}
-              x2={x2}
-              y2={y2}
-              stroke={GREEN}
-              strokeWidth={5}
-              strokeLinecap="round"
-              pathLength={1}
-              strokeDasharray={1}
-              strokeDashoffset={1 - lineP}
-              style={{ filter: "drop-shadow(0 0 14px rgba(48,209,88,0.7))" }}
-            />
-            {lineP > 0 && (
-              <>
-                <circle cx={x1 + (x2 - x1) * lineP} cy={y1 + (y2 - y1) * lineP} r={13} fill={GREEN} opacity={0.22} />
-                <circle cx={x1 + (x2 - x1) * lineP} cy={y1 + (y2 - y1) * lineP} r={8} fill={GREEN} />
-              </>
-            )}
+    <AbsoluteFill style={{ padding: "72px 96px 68px", justifyContent: "center" }}>
+      <Voice id="s2" />
+      <Sfx id="click" from={1.2} volume={0.12} />
+      <Sfx id="link" from={5.9} volume={0.18} />
+      <SceneVeil />
+      <div style={{ opacity: reveal(frame, fps, 0.05) }}><Eyebrow>A real run · zero jargon</Eyebrow></div>
+      <div style={{ opacity: reveal(frame, fps, 0.35), translate: `0px ${lift(frame, fps, 0.35)}px` }}><H1 size={72}>Study hours <span style={{ color: GREEN }}>→</span> exam score.</H1></div>
+      <div style={{ height: 25 }} />
+      <div style={{ opacity: reveal(frame, fps, 0.75), translate: `0px ${lift(frame, fps, 0.75, 18)}px` }}>
+        <Glass style={{ padding: "24px 24px 18px", overflow: "hidden" }}>
+          <svg width="100%" height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`}>
+            <defs><clipPath id="bounded-plot"><rect x={AXIS.left} y={AXIS.top} width={plotWidth} height={plotHeight} rx={12} /></clipPath></defs>
+            <g clipPath="url(#bounded-plot)">
+              {[0.2, 0.4, 0.6, 0.8].map((value) => (
+                <line key={value} x1={AXIS.left} x2={CHART_W - AXIS.right} y1={plotY(value)} y2={plotY(value)} stroke="rgba(255,255,255,0.10)" strokeWidth={1} />
+              ))}
+              {POINTS.map((point, index) => {
+                const at = dotsStart + index * 1.15;
+                const radius = interpolate(frame, [at, at + 14], [0, 6.5], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: POP });
+                const opacity = interpolate(frame, [at, at + 8], [0, 0.78], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+                return <circle key={index} cx={plotX(point[0])} cy={plotY(point[1])} r={radius} fill={INK} opacity={opacity} />;
+              })}
+              <line x1={startX} y1={startY} x2={endX} y2={endY} stroke={GREEN} strokeWidth={18} opacity={0.14} strokeLinecap="round" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - progress} />
+              <line x1={startX} y1={startY} x2={endX} y2={endY} stroke={GREEN} strokeWidth={4} strokeLinecap="round" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - progress} />
+              {progress > 0 && <circle cx={travelerX} cy={travelerY} r={7} fill={GREEN} />}
             </g>
+            <text x={AXIS.left} y={CHART_H - 10} fill={MUTED} fontFamily={MONO} fontSize={17}>STUDY HOURS</text>
+            <text x={CHART_W - AXIS.right} y={AXIS.top - 8} fill={MUTED} fontFamily={MONO} fontSize={17} textAnchor="end">EXAM SCORE</text>
           </svg>
-        </div>
+        </Glass>
       </div>
-      <div style={{ display: "flex", gap: 18, marginTop: 28, opacity: fadeIn(frame, fps, 7.8) }}>
-        <Pill accent={GREEN}>R² {METRICS.r2}</Pill>
-        <Pill>300 students</Pill>
-        <Pill>0.44 seconds</Pill>
+      <div style={{ display: "flex", gap: 14, marginTop: 22, opacity: reveal(frame, fps, 7.35) }}>
+        <Pill accent="green">R² {METRICS.r2}</Pill><Pill accent="blue">300 students</Pill><Pill>0.44 seconds</Pill>
       </div>
     </AbsoluteFill>
   );
 };
 
-/* ---------------- Scene 3 (276f ≈ 9.2s, VO 7.68s) ---------------- */
 const Scene3: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const linkW = interpolate(frame, [(1.8 + IN) * fps, (2.8 + IN) * fps], [0, 130], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: ENTER,
-  });
+  const linkProgress = interpolate(frame, [(2.0 + WAKE) * fps, (2.8 + WAKE) * fps], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: ENTER });
   return (
-    <AbsoluteFill style={{ justifyContent: "center", padding: 100 }}>
-      <VO id="s3" />
-      <Veil />
-      <div style={{ opacity: fadeIn(frame, fps, 0.2) }}>
-        <Eyebrow>The fix</Eyebrow>
-      </div>
-      <div style={{ opacity: fadeIn(frame, fps, 0.5), transform: `translateY(${rise(frame, fps, 0.5)}px)` }}>
-        <H1 size={80}>One call stamps it.</H1>
-      </div>
-      <div style={{ height: 40 }} />
-      <div style={{ opacity: fadeIn(frame, fps, 1.1), transform: `translateY(${rise(frame, fps, 1.1)}px)` }}>
-        <Glass>
-          <div style={{ display: "flex", alignItems: "center", gap: 26 }}>
-            <DocIcon />
-            <div style={{ fontFamily: MONO, fontSize: 35, color: INK }}>score_model.pkl</div>
-          </div>
-        </Glass>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 26, margin: "26px 0 26px 60px" }}>
-        <div style={{ fontFamily: MONO, fontSize: 27, color: GREEN, opacity: fadeIn(frame, fps, 1.7) }}>
-          SHA-256 LINKED
+    <AbsoluteFill style={{ padding: 96, justifyContent: "center" }}>
+      <Voice id="s3" /><Sfx id="click" from={0.85} volume={0.13} /><Sfx id="link" from={3.0} volume={0.24} /><SceneVeil />
+      <div style={{ opacity: reveal(frame, fps, 0.05) }}><Eyebrow>The fix</Eyebrow></div>
+      <div style={{ opacity: reveal(frame, fps, 0.35), translate: `0px ${lift(frame, fps, 0.35)}px` }}><H1 size={78}>One call stamps it.</H1></div>
+      <div style={{ height: 42 }} />
+      <div style={{ opacity: reveal(frame, fps, 1.0), translate: `0px ${lift(frame, fps, 1.0)}px` }}><Glass style={{ padding: "27px 34px" }}><TypeLine command="modelmeta stamp score_model.pkl" sceneAt={1.0} /></Glass></div>
+      <div style={{ height: 28 }} />
+      <div style={{ position: "relative", height: 276 }}>
+        <div style={{ position: "absolute", left: 0, right: 0, top: 0, opacity: reveal(frame, fps, 2.0), translate: `0px ${lift(frame, fps, 2.0)}px` }}>
+          <Glass style={{ padding: "24px 30px" }}><div style={{ display: "flex", alignItems: "center", gap: 18 }}><FileMark /><div style={{ fontFamily: MONO, fontSize: 30, color: INK }}>score_model.pkl</div><div style={{ flex: 1 }} /><div style={{ fontFamily: MONO, fontSize: 20, color: MUTED }}>WEIGHTS</div></div></Glass>
         </div>
-        <div style={{ height: 3, width: linkW, background: GREEN, borderRadius: 2, boxShadow: "0 0 16px rgba(48,209,88,0.8)" }} />
+        <div style={{ position: "absolute", left: 50, right: 0, top: 144, opacity: reveal(frame, fps, 2.55), translate: `0px ${lift(frame, fps, 2.55)}px` }}>
+          <Glass glow="0 0 80px rgba(48,209,88,0.16), 0 30px 90px rgba(0,0,0,0.48)" style={{ padding: "24px 30px" }}><div style={{ display: "flex", alignItems: "center", gap: 18 }}><LinkMark /><div><div style={{ fontFamily: MONO, fontSize: 28, color: INK }}>score_model.pkl.modelmeta.yaml</div><div style={{ fontFamily: MONO, fontSize: 22, color: GREEN, marginTop: 7 }}>SHA-256 LINKED · AUTO-TIMED</div></div></div></Glass>
+        </div>
+        <div style={{ position: "absolute", left: 82, top: 118, width: 2, height: 52, background: GREEN, transformOrigin: "top", scale: `1 ${linkProgress}`, opacity: linkProgress }} />
       </div>
-      <div style={{ opacity: fadeIn(frame, fps, 2.3), transform: `translateY(${rise(frame, fps, 2.3)}px)` }}>
-        <Glass glow="0 0 70px rgba(48,209,88,0.16), 0 30px 80px rgba(0,0,0,0.5)">
-          <div style={{ display: "flex", alignItems: "center", gap: 26 }}>
-            <DocIcon />
-            <div>
-              <div style={{ fontFamily: MONO, fontSize: 32, color: INK }}>score_model.pkl.modelmeta.yaml</div>
-              <div style={{ fontFamily: MONO, fontSize: 28, color: GREEN, marginTop: 8 }}>
-                wall_hours · filled automatically
-              </div>
-            </div>
-          </div>
-        </Glass>
-      </div>
-      <div style={{ height: 32 }} />
-      <div style={{ opacity: fadeIn(frame, fps, 4.2) }}>
-        <Whisper>No dashboard. No server. Just two files.</Whisper>
-      </div>
+      <div style={{ marginTop: 14, opacity: reveal(frame, fps, 5.1) }}><Body>No dashboard. No server. Just two files.</Body></div>
     </AbsoluteFill>
   );
 };
 
-/* ---------------- Scene 4 (255f ≈ 8.5s, VO 6.97s) ---------------- */
+const MetaRow: React.FC<{ label: string; value: string; accent?: string; at: number }> = ({ label, value, accent = INK, at }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  return <div style={{ display: "flex", alignItems: "baseline", gap: 26, padding: "15px 0", borderBottom: `1px solid rgba(255,255,255,0.08)`, opacity: reveal(frame, fps, at), translate: `0px ${lift(frame, fps, at, 20)}px` }}><div style={{ width: 170, flexShrink: 0, fontFamily: MONO, fontSize: 22, color: MUTED }}>{label}</div><div style={{ fontFamily: MONO, fontSize: 25, color: accent, fontVariantNumeric: "tabular-nums" }}>{value}</div></div>;
+};
+
 const Scene4: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const rows = [
-    ["dataset", "study-hours-vs-score · 300 rows"],
-    ["accuracy", `R² ${METRICS.r2} · RMSE ${METRICS.rmse}`],
-    ["duration", "wall_hours 0.44s — auto"],
-    ["integrity", "sha256 4e7517782b8f… · linked"],
-  ];
   return (
-    <AbsoluteFill style={{ justifyContent: "center", padding: 100 }}>
-      <VO id="s4" />
-      <Veil />
-      <TypeLine text="modelmeta inspect score_model.pkl" speed={22} />
-      <div style={{ height: 36 }} />
-      <Glass glow="0 0 70px rgba(10,132,255,0.14), 0 30px 80px rgba(0,0,0,0.5)">
-        {rows.map(([k, v], i) => (
-          <div
-            key={k}
-            style={{
-              display: "flex",
-              gap: 30,
-              padding: "13px 0",
-              opacity: fadeIn(frame, fps, 1.6 + i * 0.8),
-              transform: `translateY(${rise(frame, fps, 1.6 + i * 0.8, 22)}px)`,
-            }}
-          >
-            <div style={{ fontFamily: MONO, fontSize: 30, color: FAINT, width: 200 }}>{k}</div>
-            <div
-              style={{
-                fontFamily: MONO,
-                fontSize: 31,
-                color: i === 3 ? GREEN : INK,
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {v}
-            </div>
-          </div>
-        ))}
-      </Glass>
-      <div style={{ height: 30 }} />
-      <div style={{ opacity: fadeIn(frame, fps, 5.6) }}>
-        <Whisper>The whole story. Next to the file. Offline.</Whisper>
+    <AbsoluteFill style={{ padding: 96, justifyContent: "center" }}>
+      <Voice id="s4" /><Sfx id="click" from={0.75} volume={0.13} /><SceneVeil />
+      <div style={{ opacity: reveal(frame, fps, 0.05) }}><Eyebrow>Readable anywhere</Eyebrow></div>
+      <div style={{ opacity: reveal(frame, fps, 0.35), translate: `0px ${lift(frame, fps, 0.35)}px` }}><TypeLine command="modelmeta inspect score_model.pkl" sceneAt={0.35} /></div>
+      <div style={{ height: 34 }} />
+      <div style={{ opacity: reveal(frame, fps, 0.85), translate: `0px ${lift(frame, fps, 0.85)}px` }}>
+        <Glass glow="0 0 70px rgba(100,210,255,0.11), 0 30px 90px rgba(0,0,0,0.48)" style={{ padding: "18px 32px 10px" }}>
+          <MetaRow label="dataset" value="study-hours-vs-score · 300 rows" at={1.05} />
+          <MetaRow label="accuracy" value={`R² ${METRICS.r2} · RMSE ${METRICS.rmse}`} at={1.55} />
+          <MetaRow label="duration" value="wall_hours 0.44s · automatic" at={2.05} />
+          <MetaRow label="integrity" value="sha256 4e7517782b8f… · linked" accent={GREEN} at={2.55} />
+        </Glass>
       </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 13, marginTop: 28, opacity: reveal(frame, fps, 4.25) }}><CheckMark size={28} /><Body color={INK}>The whole story. Next to the file. Offline.</Body></div>
     </AbsoluteFill>
   );
 };
 
-/* ---------------- Scene 5 (252f ≈ 8.4s, VO 6.37s) ---------------- */
 const Scene5: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const corruptAt = 4.6;
-  const corrupted = frame >= (corruptAt + IN) * fps;
-  const flash = corrupted
-    ? interpolate(frame, [(corruptAt + IN) * fps, (corruptAt + IN) * fps + 9], [0.45, 0], {
-        extrapolateLeft: "clamp",
-        extrapolateRight: "clamp",
-      })
-    : 0;
+  const changedAt = 3.05;
+  const lockupAt = 5.6;
+  const changed = frame >= (changedAt + WAKE) * fps;
+  const lockupOpacity = reveal(frame, fps, lockupAt);
+  const topOpacity = interpolate(
+    frame,
+    [(lockupAt + WAKE - 0.18) * fps, (lockupAt + WAKE + 0.38) * fps],
+    [1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: ENTER },
+  );
+  const statusOpacity = interpolate(
+    frame,
+    [(lockupAt + WAKE - 0.18) * fps, (lockupAt + WAKE + 0.38) * fps],
+    [1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: ENTER },
+  );
+  const warningFlash = changed ? interpolate(frame, [(changedAt + WAKE) * fps, (changedAt + WAKE) * fps + 8], [0.26, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) : 0;
+  const delta = frame - (changedAt + WAKE) * fps;
+  const shake = changed ? Math.sin(delta * 1.6) * 8 * Math.exp(-delta * 0.17) : 0;
   return (
-    <AbsoluteFill style={{ justifyContent: "center", padding: 100 }}>
-      <VO id="s5" />
-      <Veil />
-      <AbsoluteFill style={{ background: `rgba(255,69,58,${flash})` }} />
-      <TypeLine text="modelmeta verify score_model.pkl" speed={22} />
-      <div style={{ height: 36 }} />
-      {!corrupted ? (
-        <div style={{ opacity: fadeIn(frame, fps, 1.6) }}>
-          <Glass glow="0 0 80px rgba(48,209,88,0.22), 0 30px 80px rgba(0,0,0,0.5)">
-            <div style={{ fontFamily: SANS, fontSize: 62, fontWeight: 700, letterSpacing: -2, color: GREEN }}>
-              ✓ Match · exit 0
-            </div>
-            <div style={{ fontFamily: SANS, fontSize: 29, color: SECONDARY, marginTop: 10 }}>
-              Byte-for-byte as described. Safe to load.
-            </div>
-          </Glass>
+    <AbsoluteFill style={{ padding: 96, justifyContent: "center" }}>
+      <Voice id="s5" /><Sfx id="click" from={0.65} volume={0.13} /><Sfx id="warning" from={changedAt} volume={0.22} /><SceneVeil />
+      <AbsoluteFill style={{ background: `rgba(255,69,58,${warningFlash})` }} />
+      <div style={{ opacity: topOpacity }}>
+        <div style={{ opacity: reveal(frame, fps, 0.05) }}><Eyebrow>Before you load it</Eyebrow></div>
+        <div style={{ opacity: reveal(frame, fps, 0.35), translate: `0px ${lift(frame, fps, 0.35)}px` }}><TypeLine command="modelmeta verify score_model.pkl" sceneAt={0.35} /></div>
+      </div>
+      <div style={{ height: 40 }} />
+      <div style={{ minHeight: 260, opacity: statusOpacity, translate: `${shake}px 0px` }}>
+        {!changed ? (
+          <div style={{ opacity: reveal(frame, fps, 1.2) }}><Glass glow="0 0 90px rgba(48,209,88,0.20), 0 30px 90px rgba(0,0,0,0.48)" style={{ padding: "30px 34px" }}><div style={{ display: "flex", alignItems: "center", gap: 18 }}><CheckMark size={42} /><div><div style={{ fontFamily: SANS, fontSize: 52, fontWeight: 700, letterSpacing: -2, color: GREEN }}>MATCH · EXIT 0</div><div style={{ fontFamily: SANS, fontSize: 27, color: SECONDARY, marginTop: 7 }}>Byte-for-byte as described.</div></div></div></Glass></div>
+        ) : (
+          <div style={{ opacity: reveal(frame, fps, changedAt + 0.05) }}><Glass glow="0 0 90px rgba(255,69,58,0.21), 0 30px 90px rgba(0,0,0,0.48)" style={{ padding: "30px 34px" }}><div style={{ display: "flex", alignItems: "center", gap: 18 }}><div style={{ width: 42, height: 42, border: `2px solid ${RED}`, borderRadius: 99, display: "grid", placeItems: "center", color: RED, fontFamily: SANS, fontSize: 31 }}>×</div><div><div style={{ fontFamily: SANS, fontSize: 49, fontWeight: 700, letterSpacing: -2, color: RED }}>MISMATCH · EXIT 12</div><div style={{ fontFamily: SANS, fontSize: 27, color: SECONDARY, marginTop: 7 }}>One changed byte. The gate stops it.</div></div></div></Glass></div>
+        )}
+      </div>
+      <div style={{ height: 26 }} />
+      <AbsoluteFill style={{ left: 96, right: 96, top: 0, bottom: 0, justifyContent: "center", alignItems: "center", pointerEvents: "none" }}>
+        <div style={{ opacity: lockupOpacity, translate: `0px ${lift(frame, fps, lockupAt)}px`, display: "flex", alignItems: "center", gap: 18 }}>
+          <div style={{ width: 64, height: 64, border: `1px solid ${HAIRLINE}`, borderRadius: 18, display: "grid", placeItems: "center" }}><LinkMark size={39} /></div>
+          <div><div style={{ fontFamily: SANS, fontSize: 39, fontWeight: 700, letterSpacing: -1.8, color: INK }}>Models forget. <span style={{ color: GREEN }}>Sidecars don&apos;t.</span></div><div style={{ marginTop: 8, fontFamily: MONO, fontSize: 23, color: SECONDARY }}>pip install modelmeta</div></div>
         </div>
-      ) : (
-        <div style={{ transform: `translateX(${shakeX(frame, fps, corruptAt)}px)` }}>
-          <div style={{ opacity: fadeIn(frame, fps, corruptAt + 0.05) }}>
-            <Whisper>…one byte changed in transit…</Whisper>
-          </div>
-          <div style={{ height: 20 }} />
-          <div style={{ opacity: fadeIn(frame, fps, corruptAt + 0.5) }}>
-            <Glass glow="0 0 80px rgba(255,69,58,0.28), 0 30px 80px rgba(0,0,0,0.5)">
-              <div style={{ fontFamily: SANS, fontSize: 58, fontWeight: 700, letterSpacing: -2, color: RED }}>
-                ✗ Mismatch · exit 12
-              </div>
-              <div style={{ fontFamily: SANS, fontSize: 29, color: SECONDARY, marginTop: 10 }}>
-                Do not load this file.
-              </div>
-            </Glass>
-          </div>
-        </div>
-      )}
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
 
-/* ---------------- Scene 6 (186f ≈ 6.2s, VO 4.21s) ---------------- */
-const Scene6: React.FC = () => {
+const ProgressRail: React.FC<{ duration: number }> = ({ duration }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const scale = interpolate(frame, [IN * fps, IN * fps + 55], [0.94, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: ENTER,
-  });
-  return (
-    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", textAlign: "center" }}>
-      <VO id="s6" />
-      <Veil />
-      <div style={{ opacity: fadeIn(frame, fps, 0.2), transform: `scale(${scale})` }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 30 }}>
-          <LogoMark size={110} />
-        </div>
-        <div style={{ fontFamily: SANS, fontSize: 112, fontWeight: 700, letterSpacing: -4, color: INK }}>
-          modelmeta
-        </div>
-        <div style={{ height: 16 }} />
-        <div style={{ fontFamily: SANS, fontSize: 40, fontWeight: 600, letterSpacing: -1, color: INK }}>
-          Models forget. <span style={{ color: GREEN }}>Sidecars don&apos;t.</span>
-        </div>
-      </div>
-      <div style={{ height: 46 }} />
-      <div style={{ opacity: fadeIn(frame, fps, 2.8) }}>
-        <div
-          style={{
-            fontFamily: MONO,
-            fontSize: 34,
-            color: INK,
-            background: "rgba(255,255,255,0.1)",
-            border: `1px solid ${HAIRLINE}`,
-            borderRadius: 999,
-            padding: "20px 56px",
-          }}
-        >
-          pip install modelmeta
-        </div>
-      </div>
-    </AbsoluteFill>
-  );
+  const progress = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  return <div style={{ position: "absolute", left: 96, right: 96, bottom: 38, height: 2, background: "rgba(255,255,255,0.12)", zIndex: 10 }}><div style={{ height: 2, width: `${progress * 100}%`, background: GREEN, boxShadow: `0 0 12px ${GREEN}` }} /></div>;
 };
 
-export const SCENE_FRAMES = [285, 321, 452, 313, 348, 186];
-const TRANSITION_FRAMES = 24;
+export const SCENE_FRAMES = [195, 354, 330, 210, 330];
+const TOTAL_FRAMES = SCENE_FRAMES.reduce((sum, frames) => sum + frames, 0) - TRANSITION_FRAMES * 4;
 
-export const Demo: React.FC = () => {
-  return (
-    <AbsoluteFill style={{ background: "#000" }}>
-      <Backdrop />
-      <TransitionSeries>
-        <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[0]}>
-          <Scene1 />
-        </TransitionSeries.Sequence>
-        <TransitionSeries.Transition
-          presentation={fade()}
-          timing={linearTiming({ durationInFrames: TRANSITION_FRAMES })}
-        />
-        <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[1]}>
-          <Scene2 />
-        </TransitionSeries.Sequence>
-        <TransitionSeries.Transition
-          presentation={fade()}
-          timing={linearTiming({ durationInFrames: TRANSITION_FRAMES })}
-        />
-        <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[2]}>
-          <Scene3 />
-        </TransitionSeries.Sequence>
-        <TransitionSeries.Transition
-          presentation={fade()}
-          timing={linearTiming({ durationInFrames: TRANSITION_FRAMES })}
-        />
-        <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[3]}>
-          <Scene4 />
-        </TransitionSeries.Sequence>
-        <TransitionSeries.Transition
-          presentation={fade()}
-          timing={linearTiming({ durationInFrames: TRANSITION_FRAMES })}
-        />
-        <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[4]}>
-          <Scene5 />
-        </TransitionSeries.Sequence>
-        <TransitionSeries.Transition
-          presentation={fade()}
-          timing={linearTiming({ durationInFrames: TRANSITION_FRAMES })}
-        />
-        <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[5]}>
-          <Scene6 />
-        </TransitionSeries.Sequence>
-      </TransitionSeries>
-    </AbsoluteFill>
-  );
-};
+export const Demo: React.FC = () => (
+  <AbsoluteFill style={{ background: "#000" }}>
+    <Backdrop />
+    <TransitionSeries>
+      <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[0]}><Scene1 /></TransitionSeries.Sequence>
+      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: TRANSITION_FRAMES })} />
+      <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[1]}><Scene2 /></TransitionSeries.Sequence>
+      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: TRANSITION_FRAMES })} />
+      <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[2]}><Scene3 /></TransitionSeries.Sequence>
+      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: TRANSITION_FRAMES })} />
+      <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[3]}><Scene4 /></TransitionSeries.Sequence>
+      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: TRANSITION_FRAMES })} />
+      <TransitionSeries.Sequence durationInFrames={SCENE_FRAMES[4]}><Scene5 /></TransitionSeries.Sequence>
+    </TransitionSeries>
+    <ProgressRail duration={TOTAL_FRAMES} />
+  </AbsoluteFill>
+);
