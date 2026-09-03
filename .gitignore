@@ -10,3 +10,4 @@ dist/
 *.egg-info/
 .env
 .env.*
+demo/mm-video/node_modules/

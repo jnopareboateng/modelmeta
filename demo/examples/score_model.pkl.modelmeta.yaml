@@ -1,0 +1,27 @@
+checkpoint:
+  kind: file
+  path: score_model.pkl
+  sha256: 4e7517782b8f2f4a9551e4ee3e764e33198891978979f63b0b4743dda4b8cba6
+  size_bytes: 211301
+compute:
+  accelerator_count: 1
+  accelerator_type: cpu
+  framework: sklearn
+  gpu_hours: 4.813035583336184e-05
+  wall_hours: 4.813035583336184e-05
+created_at: '2026-09-03T11:46:18Z'
+integrity:
+  metadata_encoding: yaml+canonical-json-v1
+  signed: false
+provenance:
+  dataset:
+    digest: sha256:00adb01b282ceec3ef92c8b6da43b96bc8ff4f3dfbaac476fabd80bc977dd842
+    name: study-hours-vs-score
+    rows: 300
+    version: synthetic-v1
+  run_id: demo_study_001
+schema_version: '0.1'
+training:
+  epoch: 1
+  global_step: 200
+  loss: 4.142283456092906
