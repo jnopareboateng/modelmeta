@@ -1,11 +1,11 @@
 # modelmeta — system architecture (v0.1)
 
-**Status:** Design gate for implementation. Spec: `docs/specs/modelmeta-spec-v0.1.md` (incl. §19 amendments).
+**Status:** Implemented v0.1 architecture, maintained against the shipped `0.1.0` package. Updated 2026-09-03. The code and tests are authoritative when this document drifts.
 **Principles:** offline-first; stdlib-first; two runtime deps (PyYAML, rfc8785); dict-native data model; fail closed; deterministic bytes; never follow paths read from sidecar contents.
 
 ## 1. Component graph
 
-Dependency arrows point downward only. No cycles. `adapters/` imports nothing but the public API.
+Dependency arrows point downward only. No cycles. The optional `adapters/` boundary lazily imports the writer and never imports PyTorch at module load time.
 
 ```mermaid
 graph TD
@@ -63,6 +63,10 @@ Single hierarchy, each class carrying its stable exit code:
 - `validate_checkpoint_section`, `validate_metadata` — pure functions, no I/O.
 - Secret denylist guard lives here: recursive key scan of caller-supplied sections against `(?i)(token|secret|password|api[_-]?key)` → `ValueError`. Documented as a caller-input safety check, not complete detection (spec §13).
 
+### detect.py
+- `detect_accelerators() -> dict` performs best-effort visibility detection across supported torch backends, vendor SMI tools, and allocation environment variables without importing torch at module load time.
+- Detection is informational, never a utilization measurement. `MetaWriter` uses it only when the caller has not declared accelerator count/type.
+
 ### hashing.py
 - `FileIdentity = tuple[size, mtime_ns, inode, dev]` via `os.lstat` (lstat also catches symlink substitution mid-flight).
 - `hash_file(path) -> DigestResult(hex, elapsed_s, manifest=None)`:
@@ -84,10 +88,10 @@ Single hierarchy, each class carrying its stable exit code:
 - Reader returns raw parsed dict; normalization is canonical's job. Reader never resolves `checkpoint.path`.
 
 ### writer.py
-- `MetaWriter(run_context=None)`; `on_checkpoint_saved(checkpoint_path, *, training_state=None, compute_state=None, lineage=None, optimizer_state=None) -> Path`.
+- `MetaWriter(run_context=None)`; `on_checkpoint_saved(checkpoint_path, *, training_state=None, compute_state=None, lineage=None, optimizer_state=None) -> str`.
 - Sequence (spec §8): validate path (reject `*.modelmeta.yaml.tmp*` targets) → hash → build metadata (deep-copied inputs, secret guard, `created_at=utc_now()`) → validate → dump YAML deterministically (`sort_keys=True, default_flow_style=False, allow_unicode=True, width=10**6`) → mkstemp same dir → write → flush → fsync → close → `os.replace` (retry ×3 backoff on Windows `PermissionError`) → parent-dir fsync (POSIX-only, best-effort).
 - `try/finally` unlinks the temp file on any failure; previous sidecar untouched. Idempotent: full replace, never merge (spec §8.1).
-- Hashing cost reported via `writer.last_hash_seconds` (return type stays `Path` per spec §8 example).
+- A monotonic timer starts at writer creation or `reset_timer()`. When absent, `wall_hours` is elapsed wall time and `gpu_hours` is estimated as `wall_hours × accelerator_count`; explicit caller values take precedence. Hashing cost is reported via `writer.last_hash_seconds`.
 
 ### verify.py
 - `verify_checkpoint(checkpoint_path) -> VerificationOutcome(status, exit_code, detail)`. Domain outcomes are returned, never raised; unexpected `OSError` maps to `io_error`.

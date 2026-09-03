@@ -1,6 +1,6 @@
 # modelmeta — realistic specification v0.1
 
-**Status:** Amended after adversarial review; implementation-ready pending design approval
+**Status:** Implemented contract for package v0.1.0. Maintained against the shipped code and tests; updated 2026-09-03.
 **Audience:** Engineers building or operating training pipelines
 **Primary decision:** Ship a portable, hash-linked metadata sidecar first. Do not describe v0.1 as independently verified provenance.
 
@@ -306,8 +306,6 @@ The checkpoint digest is SHA-256 of the canonical JSON representation of that ma
 
 An unrecognized `schema_version` is an unsupported-schema result. A v0.1 reader must fail closed rather than attempting best-effort parsing. Verification must never report provenance as verified; the success message is `checkpoint integrity verified; metadata remains self-asserted`.
 
-Verification must never report “provenance verified”. Its success message should say “checkpoint integrity verified; metadata remains self-asserted”.
-
 ## 10. CLI
 
 ### 10.1 Inspect
@@ -362,11 +360,13 @@ Future changes may add fields, but must not remove or rename v1 fields without i
 
 The initial release should not provide a command that invents provenance from incomplete information. A future `modelmeta create` command may accept an explicit metadata file, but it must label all manually supplied fields as self-asserted.
 
-## 11. GPU-hours decision
+## 11. Elapsed timing and GPU-hours semantics
 
-GPU-hours should not be implemented as a cumulative read-modify-write field in the sidecar for v0.1.
+`MetaWriter` starts a monotonic run timer when it is created. Callers can reset it with `reset_timer()` when training actually begins. On each checkpoint, the writer records `compute.wall_hours` from elapsed wall-clock time when no explicit `wall_hours` is supplied.
 
-The sidecar is a snapshot tied to one checkpoint, not a durable run ledger. Using it as the ledger creates failure modes when:
+When no explicit `gpu_hours` is supplied, the writer estimates it as `wall_hours × accelerator_count`. The writer may best-effort detect visible accelerator count/type when the caller has not supplied them. Detection describes allocation or visibility, not utilization; the estimate is self-asserted and only as meaningful as the declared count. Explicit caller values take precedence. This is convenience timing, not a durable run ledger.
+
+GPU-hours must not be implemented as a cumulative read-modify-write field in the sidecar. The sidecar is a snapshot tied to one checkpoint, not durable run state. Using it as a ledger creates failure modes when:
 
 - an older checkpoint is copied over a newer one;
 - a sidecar is missing or edited;
@@ -375,7 +375,7 @@ The sidecar is a snapshot tied to one checkpoint, not a durable run ledger. Usin
 - a checkpoint save fails after the timer is updated;
 - a process is killed between computation and sidecar replacement.
 
-For v0.1, `compute.gpu_hours` is optional and must be supplied by the caller. If implemented later, use a separate append-only run ledger or durable training-run state, then copy a snapshot into each checkpoint sidecar.
+If durable accounting is needed later, use a separate append-only run ledger or durable training-run state, then copy a snapshot into each checkpoint sidecar.
 
 The future timer must define whether it measures:
 
@@ -413,9 +413,10 @@ The writer must not capture process environments or discover secrets implicitly.
 ```text
 modelmeta/
 ├── __init__.py
-├── schema.py          # Typed model and validation
+├── schema.py          # Schema validation
 ├── canonical.py       # Canonical JSON and timestamp rules
 ├── hashing.py         # File and directory hashing
+├── detect.py          # Best-effort accelerator visibility detection
 ├── writer.py          # Atomic sidecar creation
 ├── reader.py          # YAML parsing and canonical representation
 ├── verify.py          # Digest and schema verification
@@ -441,31 +442,31 @@ Avoid importing PyTorch in the core package. The raw PyTorch adapter may depend 
 
 ## 15. v0.1 scope
 
-### Must ship
+### Shipped in v0.1.0
 
-- [ ] Typed schema with explicit required and optional fields
-- [ ] YAML reader and writer with duplicate-key rejection
-- [ ] Canonical internal representation
-- [ ] Exact directory sidecar/temp-file exclusion and sidecar collision handling
-- [ ] Streaming SHA-256 for files
-- [ ] Deterministic directory manifest hashing
-- [ ] Symlink rejection and best-effort hash race detection
-- [ ] Atomic sidecar writes with temporary-file cleanup
-- [ ] `MetaWriter` framework-neutral API
-- [ ] Raw PyTorch loop adapter with no framework callback dependency
-- [ ] `inspect`, `verify`, and `diff` commands
-- [ ] JSON CLI output mode and documented exit codes
-- [ ] Tests for corruption, missing sidecars, partial writes, directories, and unknown fields
-- [ ] Documentation that distinguishes integrity from provenance
+- [x] Typed schema with explicit required and optional fields
+- [x] YAML reader and writer with duplicate-key rejection
+- [x] Canonical internal representation
+- [x] Exact directory sidecar/temp-file exclusion and sidecar collision handling
+- [x] Streaming SHA-256 for files
+- [x] Deterministic directory manifest hashing
+- [x] Symlink rejection and best-effort hash race detection
+- [x] Atomic sidecar writes with temporary-file cleanup
+- [x] `MetaWriter` framework-neutral API
+- [x] Raw PyTorch loop adapter with no framework callback dependency
+- [x] `inspect`, `verify`, and `diff` commands
+- [x] JSON CLI output mode and documented exit codes
+- [x] Tests for corruption, missing sidecars, partial writes, directories, and unknown fields
+- [x] Documentation that distinguishes integrity from provenance
 
-### Should ship if small
+### Also shipped in v0.1.0
 
-- [ ] Optional caller-supplied compute metadata
-- [ ] Optional caller-supplied GPU-hours value with documented semantics
-- [ ] A `modelmeta version` command
-- [ ] A pre-upload checklist for keeping checkpoint and sidecar together
-- [ ] Secret-looking caller-key warning or rejection
-- [ ] Explicit unsupported-schema-version handling
+- [x] Optional caller-supplied compute metadata
+- [x] Optional caller-supplied GPU-hours value with documented semantics
+- [x] A `modelmeta version` command
+- [x] A pre-upload checklist for keeping checkpoint and sidecar together
+- [x] Secret-looking caller-key warning or rejection
+- [x] Explicit unsupported-schema-version handling
 
 ### Explicitly defer
 
@@ -496,7 +497,7 @@ The release is acceptable when all of the following are true:
 10. CLI output is stable enough for scripts, with human-readable output kept separate from `--json` output.
 11. The local validation hooks are documented and reproducible without hosted CI minutes.
 
-## 17. Implementation order
+## 17. Historical implementation order
 
 1. Freeze the schema and canonicalisation rules.
 2. Implement hashing and tests before the writer.

@@ -32,3 +32,7 @@ uv run pytest
 - Runtime dependencies stay minimal; justify any addition in the PR description.
 - No fabricated metadata: unavailable optional values are omitted, never invented.
 - Verification output must never describe provenance as verified.
+
+## Documentation
+
+The root `README.md` is the current product and quickstart page. Keep it aligned with the shipped behavior and make security boundaries explicit. Update `demo/README.md` when the demo artifact or render workflow changes, and update the architecture/spec documents when a public contract changes. Run the local checks before opening a change; documentation examples should be executable from a clean checkout where practical.

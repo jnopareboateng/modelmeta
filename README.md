@@ -1,78 +1,51 @@
-# modelmeta
+# modelmeta — portable, hash-linked metadata for model checkpoints
 
-**One-line problem:** Training saves `model.safetensors` but forgets *how long it took, what data, what code, and what loss* made it — so you need a separate W&B/MLflow setup just to look it up later. `modelmeta` puts that info right next to the checkpoint so you can see it and verify it anywhere, offline, with no tracking server.
+**modelmeta puts dataset, training, code, timing, and integrity metadata beside every model checkpoint. Inspect it anywhere. Verify the exact bytes offline. No W&B. No MLflow. No tracking server.**
+
+[![Watch the modelmeta demo: offline model checkpoint metadata and integrity verification](demo/modelmeta-demo.gif)](demo/modelmeta-demo.mp4)
+
+[Watch the full 45-second demo](demo/modelmeta-demo.mp4) · [Explore the reproducible example](demo/README.md)
+
+## Model checkpoint metadata that travels with the artifact
 
 ```text
 checkpoints/
 ├── step_042000.safetensors
-└── step_042000.safetensors.modelmeta.yaml  <- travels with the checkpoint (SHA-256 linked)
+└── step_042000.safetensors.modelmeta.yaml
 ```
 
-No tracking backend. No network. Just two files you copy together. `modelmeta verify` checks the bytes match, `modelmeta inspect` shows the story behind the checkpoint.
-
-> **Beginner in 30 seconds:**
-> 1. Create one `MetaWriter` when training starts — it starts a timer automatically.
-> 2. After each `torch.save()` call `writer.on_checkpoint_saved("ckpt.safetensors", training_state={...})` — it adds `wall_hours`/`gpu_hours` for you.
-> 3. Run `modelmeta inspect ckpt.safetensors` — you see step, loss, dataset, commit, *and how long training has run so far* without W&B.
-
-**What v0.1 guarantees:** integrity (these bytes are exactly what the sidecar described) and traceability (what step, loss, dataset, commit, and elapsed time produced them — as self-asserted by the training process).
-
-**What v0.1 does not guarantee:** that the metadata is *true*. Anyone who controls both files can regenerate a matching pair. Unsigned metadata is not proof — signed attestations are planned for v0.2.
+The sidecar records the checkpoint digest plus the training, dataset, Git, compute, and elapsed-time context supplied by the training process. It is portable YAML, readable without a tracking backend, and linked to the exact checkpoint bytes with SHA-256.
 
 ## Install
 
 ```bash
-pip install modelmeta          # or: uv pip install modelmeta
+pip install modelmeta
 ```
 
-Requires Python ≥ 3.11. Core has two runtime dependencies (PyYAML, rfc8785) and never imports PyTorch.
+Requires Python 3.11 or newer. The runtime package uses PyYAML and RFC 8785 canonical JSON; it does not require PyTorch or another ML framework.
 
-## Verify before you load
-
-The pickle deserializer behind `torch.load` executes code, and malicious checkpoints are an active attack vector. Make hash verification a pre-load gate:
+## Verify before loading a checkpoint
 
 ```bash
-$ modelmeta verify checkpoints/step_042000.safetensors
-checkpoint integrity verified; metadata remains self-asserted
-
-$ echo $?   # 0
+modelmeta verify checkpoints/step_042000.safetensors
+# checkpoint integrity verified; metadata remains self-asserted
 ```
 
-If a single byte of the checkpoint changed in transit:
-
-```bash
-$ modelmeta verify checkpoints/step_042000.safetensors
-verify failed: digest_mismatch: checkpoint bytes do not match the digest recorded in the sidecar
-
-$ echo $?   # 12
-```
-
-Scripted use:
+Exit `0` means the supplied checkpoint bytes match the digest in the adjacent sidecar. A changed byte returns exit `12` (`digest_mismatch`). JSON output is stable for automation:
 
 ```bash
 modelmeta verify --json checkpoints/step_042000.safetensors
 ```
 
-```json
-{
-  "cli_output_version": "1",
-  "command": "verify",
-  "exit_code": 0,
-  "status": "match",
-  "checkpoint_path": "checkpoints/step_042000.safetensors",
-  "sidecar_path": "checkpoints/step_042000.safetensors.modelmeta.yaml",
-  "detail": {"message": "...", "sha256": "...", "size_bytes": 1843200000, "hash_seconds": 3.1}
-}
-```
+`verify` hashes bytes; it does not deserialize or execute the checkpoint. A matching result does not authenticate the sidecar, prove who produced the model, or make an unknown pickle safe to load. Treat untrusted `.pkl`/`torch.load` inputs as executable content and use an independent trusted source or sandbox.
 
-## Stamp after saving
+## Stamp metadata after saving
 
-In a raw PyTorch loop, create **one** writer when the run starts and reuse it — the timer starts automatically. Call it immediately after a successful save:
+Create one `MetaWriter` when the run starts and reuse it after each successful checkpoint save:
 
 ```python
 from modelmeta import MetaWriter
 
-# Timer starts here at run start — no manual clock needed
 writer = MetaWriter(
     run_context={
         "run_id": "run_20260720_001",
@@ -85,77 +58,68 @@ writer = MetaWriter(
 
 sidecar = writer.on_checkpoint_saved(
     "checkpoints/step_042000.safetensors",
-    training_state={"global_step": 42000, "loss": 1.2384, "learning_rate": 2e-05},
+    training_state={"global_step": 42000, "loss": 1.2384, "learning_rate": 2e-5},
     compute_state={"framework": "torch", "precision": "bf16", "accelerator_count": 8},
-    # you don't need to pass gpu_hours — it's auto-filled as wall_hours * accelerator_count
-    # pass it only if you want to override: compute_state={"gpu_hours": 12.5}
 )
-
-# Inspect will now show:
-#   wall_hours: 1.2345 (~74.1 min)
-#   gpu_hours: 9.8760
-# If you call it again 30 min later, the next checkpoint shows ~1.73 wall_hours automatically.
 ```
 
-Need to reset the timer (e.g. you created the writer earlier)? Call `writer.reset_timer()` when training actually starts. For a quick one-off without reusing a writer:
+The writer atomically replaces the sidecar only after hashing and validation succeed. It automatically records `wall_hours` from the monotonic run timer and estimates `gpu_hours` as `wall_hours × accelerator_count` when no explicit value is supplied. Detection describes visible/available accelerators; it is not GPU-utilisation proof. Explicit caller values win. Call `writer.reset_timer()` when training actually begins.
+
+For a one-off integration, use the framework-neutral adapter:
 
 ```python
 from modelmeta.adapters import stamp_checkpoint
 
-stamp_checkpoint("ckpt.pt", training_state={"global_step": 100}, repo_path=".")
-# Note: stamp_checkpoint creates a fresh writer, so elapsed time will be ~0.
-# For real run duration, reuse one MetaWriter as above.
+stamp_checkpoint("checkpoint.pt", training_state={"global_step": 100}, repo_path=".")
 ```
 
-Writes are atomic: the sidecar appears complete or not at all; a crash mid-write leaves the previous sidecar untouched. Unavailable values are omitted, never invented.
+That adapter creates a fresh writer, so its elapsed time is approximately zero. Reuse `MetaWriter` when run duration matters.
 
-## Inspect and diff (beginner-friendly)
+## Inspect and compare checkpoints
 
 ```bash
-modelmeta inspect checkpoints/step_042000.safetensors   # human-readable summary
-# shows: step, loss, wall_hours/gpu_hours, dataset, commit — no JSON needed
-
-modelmeta inspect --json checkpoints/step_042000.safetensors  # for scripts
-
-modelmeta diff old.safetensors new.safetensors          # what changed between two checkpoints
+modelmeta inspect checkpoints/step_042000.safetensors
+modelmeta inspect --json checkpoints/step_042000.safetensors
+modelmeta diff checkpoints/step_040000.safetensors checkpoints/step_042000.safetensors
 ```
 
-Example `inspect` output:
+`inspect` shows the checkpoint digest, training snapshot, dataset identity, Git state, compute information, signing state, and missing high-value fields. `diff` compares metadata claims grouped by training, provenance, compute, and artifact; it does not rank model quality.
+
+## Files and directories
+
+For a single file, the sidecar sits beside it:
+
 ```text
-sidecar: step_042000.safetensors.modelmeta.yaml
-checkpoint.sha256: 0123...abcdef
-training.global_step: 42000
-training.loss: 1.2384
-wall_hours: 1.2345 (~74.1 min)
-gpu_hours: 9.8760
-dataset.name: curated-corpus
+step_042000.safetensors
+step_042000.safetensors.modelmeta.yaml
 ```
 
-`diff` groups changes into artifact / training / provenance / compute buckets. It compares claims, not quality — a lower loss in the sidecar does not mean a better model.
+For a directory checkpoint, modelmeta hashes every regular file using a deterministic relative-path manifest and writes the reserved sidecar inside the directory:
 
-## Keeping pairs together
-
-The sidecar is useless without its checkpoint. Copy and upload them as one operation:
-
-```bash
-cp step_042000.safetensors step_042000.safetensors.modelmeta.yaml destination/
+```text
+step_042000/
+├── model-00001-of-00004.safetensors
+├── optimizer.pt
+└── step_042000.modelmeta.yaml
 ```
 
-Directory checkpoints embed the sidecar inside the directory; copy the directory whole. If only the checkpoint is uploaded, the metadata is intentionally absent — modelmeta will not try to recover it from anywhere.
+Copy or upload the checkpoint and sidecar together. `modelmeta` never follows a checkpoint path read from sidecar contents and never recovers missing metadata from a tracking service.
+
+## Integrity is not authenticated provenance
+
+If verification succeeds, the checkpoint bytes match the sidecar digest and the sidecar passes schema validation. The metadata remains self-asserted: modelmeta does not prove the dataset, code, loss, hardware, author, or model quality claims. Anyone who can replace both files can create a new matching pair. Signed attestations and durable run identity are outside v0.1.
 
 ## Exit codes
 
 | Code | Status | Meaning |
-|---|---|---|
+|---:|---|---|
 | 0 | `match` | Checkpoint and sidecar agree |
 | 2 | — | CLI usage error |
 | 10 | `missing_sidecar` | No metadata available |
-| 11 | `invalid_schema` | Sidecar structurally untrustworthy |
-| 12 | `digest_mismatch` | Checkpoint bytes differ from sidecar |
+| 11 | `invalid_schema` | Sidecar is structurally invalid |
+| 12 | `digest_mismatch` | Checkpoint bytes differ from the sidecar |
 | 13 | `unsupported_target` / `unsupported_schema` | v0.1 cannot safely proceed |
 | 14 | `io_error` / `race_detected` | Verification could not complete |
-
-An unrecognized `schema_version` fails closed. Verification output never describes provenance as verified.
 
 ## Development
 
@@ -163,12 +127,17 @@ An unrecognized `schema_version` fails closed. Verification output never describ
 uv sync --extra dev
 git config core.hooksPath .githooks
 uv run pytest -m "not slow"     # fast suite
-uv run pytest -m slow           # >memory streaming acceptance test (minutes)
+uv run pytest -m slow            # larger-than-memory streaming acceptance test
 ```
 
-Branching: `main` ← `dev` ← `feat/*`. Gates: ruff, mypy strict, pytest. See [CONTRIBUTING.md](CONTRIBUTING.md).
+The project is Python 3.11+ and uses `main ← dev ← feat/*`. See [CONTRIBUTING.md](CONTRIBUTING.md) for local gates.
 
-Design and threat model: [docs/architecture.md](docs/architecture.md) · [spec](docs/specs/modelmeta-spec-v0.1.md)
+## Documentation
+
+- [Reproducible demo and video source](demo/README.md)
+- [System architecture](docs/architecture.md)
+- [v0.1 specification](docs/specs/modelmeta-spec-v0.1.md)
+- [Contribution guide](CONTRIBUTING.md)
 
 ## License
 

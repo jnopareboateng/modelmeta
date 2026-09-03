@@ -5,13 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "modelmeta"
 version = "0.1.0"
-description = "Portable, hash-linked metadata sidecars for model checkpoints"
+description = "Portable, hash-linked metadata sidecars and offline integrity verification for model checkpoints"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "jnopareboateng" }]
-keywords = ["pytorch", "checkpoints", "metadata", "integrity", "provenance", "mlops"]
+keywords = ["pytorch", "safetensors", "model-checkpoint-metadata", "checkpoints", "metadata", "artifact-integrity", "offline-verification", "provenance", "mlops"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
